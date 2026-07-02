@@ -1,0 +1,479 @@
+-- ============================================================
+--  SISTEMA UNIVERSAL ROBLOX CHEAT (v3.0)
+--  FEATURES:
+--  • Painel clean preto
+--  • Toggle vermelho quando ativo
+--  • Bind personalizável (Mouse 4/5, Left Alt)
+--  • **TECLA INSERT p/ ABRIR/FECHAR O PAINEL**
+--  • All-in-One (ESP + Aimbot)
+--  • Proteção anti-tamper integrada
+-- ============================================================
+
+-- ========================
+--  PROTEÇÃO ANTI-TAMPER
+-- ========================
+local function AntiTamper()
+    local mt = getmetatable(game)
+    if mt and mt.__newindex then
+        local oldnewindex = mt.__newindex
+        mt.__newindex = function(t, k, v)
+            if k == "Script" or k == "LocalScript" then
+                error("🚫 Modificação de scripts bloqueada.", 2)
+            end
+            return oldnewindex(t, k, v)
+        end
+    end
+end
+
+local function Obfuscate()
+    local debug = getfenv()
+    debug.getinfo = nil
+    debug.traceback = nil
+    setreadonly(print, true)
+end
+
+AntiTamper()
+Obfuscate()
+
+-- ========================
+--  CONFIGURAÇÕES
+-- ========================
+local Config = {
+    ESP = {
+        Enabled = false,
+        Box = true,
+        Names = true,
+        BoxColor = Color3.fromRGB(200, 0, 255), -- Roxo padrão
+    },
+    Aimbot = {
+        Enabled = false,
+        FOV = 90,
+        Smoothing = 75,
+        VisibleCheck = true,
+        TeamCheck = true,
+        AutoShoot = true,
+        Keybind = Enum.KeyCode.MouseButton4, -- Mouse 4 padrão
+    },
+}
+
+-- ========================
+--  SERVIÇOS
+-- ========================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- ========================
+--  CACHE
+-- ========================
+local ESPRenderObjects = {}
+local IsGUIOpen = true
+
+-- ========================
+--  ANTI-DETECÇÃO
+-- ========================
+local function AntiAnalysis()
+    local oldHook = hookfunction
+    if oldHook then hookfunction = nil end
+end
+
+AntiAnalysis()
+
+-- ========================
+--  ESP MÓDULO
+-- ========================
+local function UpdateESP()
+    if not Config.ESP.Enabled then return end
+
+    local localTeam = LocalPlayer.Team
+
+    for _, Player in Players:GetPlayers() do
+        if Player == LocalPlayer then
+            if ESPRenderObjects[Player] then
+                for _, obj in ESPRenderObjects[Player] do obj:Destroy() end
+                ESPRenderObjects[Player] = nil
+            end
+            continue
+        end
+
+        local Character = Player.Character
+        if not Character then
+            if ESPRenderObjects[Player] then
+                for _, obj in ESPRenderObjects[Player] do obj:Destroy() end
+                ESPRenderObjects[Player] = nil
+            end
+            continue
+        end
+
+        local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+        if not HumanoidRootPart then continue end
+
+        local _, onScreen = Camera:WorldToViewportPoint(HumanoidRootPart.Position)
+        if not onScreen then continue end
+
+        if not ESPRenderObjects[Player] then
+            ESPRenderObjects[Player] = {}
+        end
+
+        -- Box
+        local Box = Instance.new("BoxHandleAdornment")
+        Box.Adornee = HumanoidRootPart
+        Box.AlwaysOnTop = true
+        Box.ZIndex = 10
+        Box.Color3 = Config.ESP.BoxColor
+        Box.Transparency = 0.5
+        Box.Size = Vector3.new(4, 6, 2)
+        Box.Parent = Character
+        table.insert(ESPRenderObjects[Player], Box)
+
+        -- Name
+        if Config.ESP.Names then
+            local Billboard = Instance.new("BillboardGui")
+            Billboard.Size = UDim2.new(0, 200, 0, 50)
+            Billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+            Billboard.AlwaysOnTop = true
+            Billboard.Parent = Character
+
+            local NameLabel = Instance.new("TextLabel")
+            NameLabel.Size = UDim2.new(1, 0, 1, 0)
+            NameLabel.Text = Player.Name .. " [" ..
+                math.floor((HumanoidRootPart.Position - Camera.CFrame.Position).Magnitude) .. "m]"
+            NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            NameLabel.BackgroundTransparency = 1
+            NameLabel.Font = Enum.Font.GothamBold
+            NameLabel.TextSize = 18
+            NameLabel.TextStrokeTransparency = 0
+            NameLabel.Parent = Billboard
+            table.insert(ESPRenderObjects[Player], Billboard)
+        end
+    end
+end
+
+local function ToggleESP(state)
+    Config.ESP.Enabled = state
+    if state then
+        RunService:BindToRenderStep("ESPUpdate", Enum.RenderPriority.Camera.Value, UpdateESP)
+    else
+        RunService:UnbindFromRenderStep("ESPUpdate")
+        for _, objects in ESPRenderObjects do
+            for _, obj in objects do obj:Destroy() end
+        end
+        ESPRenderObjects = {}
+    end
+end
+
+-- ========================
+--  AIMBOT MÓDULO
+-- ========================
+local function GetClosestVisibleTarget()
+    local closestPlayer = nil
+    local closestDistance = math.huge
+
+    local mousePos = UserInputService:GetMouseLocation()
+
+    for _, Player in Players:GetPlayers() do
+        if Player == LocalPlayer then continue end
+        if Config.Aimbot.TeamCheck and Player.Team == LocalPlayer.Team then continue end
+
+        local Character = Player.Character
+        if not Character then continue end
+
+        local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+        if not HumanoidRootPart then continue end
+
+        if Config.Aimbot.VisibleCheck then
+            local direction = (HumanoidRootPart.Position - Camera.CFrame.Position).Unit
+            local ray = Ray.new(Camera.CFrame.Position, direction * 500)
+            local ignoreList = {LocalPlayer.Character, Camera}
+            local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignoreList)
+            if not (hit and hit:IsDescendantOf(Character)) then continue end
+        end
+
+        local screenPos, onScreen = Camera:WorldToViewportPoint(HumanoidRootPart.Position)
+        if not onScreen then continue end
+
+        local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+        if distance < Config.Aimbot.FOV and distance < closestDistance then
+            closestDistance = distance
+            closestPlayer = Player
+        end
+    end
+
+    return closestPlayer
+end
+
+local function AimbotUpdate()
+    if not Config.Aimbot.Enabled then return end
+
+    local target = GetClosestVisibleTarget()
+    if not target then return end
+
+    local Character = target.Character
+    if not Character then return end
+
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+    if not HumanoidRootPart then return end
+
+    local targetPos = HumanoidRootPart.Position
+    local cameraPos = Camera.CFrame.Position
+    local smoothing = math.clamp(1 - (Config.Aimbot.Smoothing / 100), 0.01, 0.99)
+    local direction = (targetPos - cameraPos).Unit
+
+    local currentCFrame = Camera.CFrame
+    local lookAt = currentCFrame.LookVector:Lerp(direction, smoothing)
+    Camera.CFrame = CFrame.lookAt(cameraPos, cameraPos + lookAt)
+
+    if Config.Aimbot.AutoShoot then
+        local mouse = LocalPlayer:GetMouse()
+        if mouse and mouse.Target then mouse1click() end
+    end
+end
+
+-- ========================
+--  BIND PERSONALIZÁVEL
+-- ========================
+local PossibleBinds = {
+    {Name="Mouse 4", Key=Enum.KeyCode.MouseButton4},
+    {Name="Mouse 5", Key=Enum.KeyCode.MouseButton5},
+    {Name="Left Alt", Key=Enum.KeyCode.LeftAlt},
+}
+
+local CurrentBindIndex = 1
+
+-- ========================
+--  GUI MÓDULO (Toggle com INSERT)
+-- ========================
+local function CreateGUI()
+    if IsGUIOpen then
+        -- Se já existir, destruir para recriar (evita duplicatas)
+        if LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("UniversalCheatGUI") then
+            LocalPlayer.PlayerGui:FindFirstChild("UniversalCheatGUI"):Destroy()
+        end
+
+        local ScreenGui = Instance.new("ScreenGui")
+        ScreenGui.Name = "UniversalCheatGUI"
+        ScreenGui.ResetOnSpawn = false
+        ScreenGui.Parent = LocalPlayer:FindFirstChild("PlayerGui")
+
+        local MainFrame = Instance.new("Frame")
+        MainFrame.Size = UDim2.new(0, 240, 0, 380)
+        MainFrame.Position = UDim2.new(0.5, -120, 0.5, -190)
+        MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20) -- Preto limpo
+        MainFrame.BorderSizePixel = 0
+        MainFrame.Parent = ScreenGui
+
+        -- Titulo
+        local Title = Instance.new("TextLabel")
+        Title.Size = UDim2.new(1, 0, 0, 32)
+        Title.Position = UDim2.new(0, 0, 0, 8)
+        Title.Text = "🔫 ROBLOX CHEAT v3.0 🔫"
+        Title.BackgroundTransparency = 1
+        Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Title.Font = Enum.Font.GothamBold
+        Title.TextSize = 16
+        Title.Parent = MainFrame
+
+        -- =====================
+        --  ESP SECTION
+        -- =====================
+        local ESPLabel = Instance.new("TextLabel")
+        ESPLabel.Size = UDim2.new(1, 0, 0, 24)
+        ESPLabel.Position = UDim2.new(0, 0, 0, 50)
+        ESPLabel.Text = "👁️ ESP CONTROL 👁️"
+        ESPLabel.BackgroundTransparency = 1
+        ESPLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+        ESPLabel.Font = Enum.Font.GothamBold
+        ESPLabel.TextSize = 14
+        ESPLabel.Parent = MainFrame
+
+        local ToggleESP = Instance.new("TextButton")
+        ToggleESP.Size = UDim2.new(0, 200, 0, 32)
+        ToggleESP.Position = UDim2.new(0, 20, 0, 80)
+        ToggleESP.Text = "📦 ESP OFF"
+        ToggleESP.BackgroundColor3 = Color3.fromRGB(70, 0, 0)
+        ToggleESP.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleESP.Font = Enum.Font.GothamBold
+        ToggleESP.TextSize = 14
+        ToggleESP.Parent = MainFrame
+
+        ToggleESP.MouseButton1Click:Connect(function()
+            Config.ESP.Enabled = not Config.ESP.Enabled
+            ToggleESP.Text = "📦 ESP " .. (Config.ESP.Enabled and "ON" or "OFF")
+            ToggleESP.BackgroundColor3 = Config.ESP.Enabled and Color3.fromRGB(100, 0, 0) or Color3.fromRGB(70, 0, 0)
+            ToggleESP(Config.ESP.Enabled)
+        end)
+
+        local ToggleBox = Instance.new("TextButton")
+        ToggleBox.Size = UDim2.new(0, 200, 0, 32)
+        ToggleBox.Position = UDim2.new(0, 20, 0, 125)
+        ToggleBox.Text = "🟣 BOX ON"
+        ToggleBox.BackgroundColor3 = Color3.fromRGB(100, 0, 100)
+        ToggleBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleBox.Font = Enum.Font.Gotham
+        ToggleBox.TextSize = 14
+        ToggleBox.Parent = MainFrame
+
+        ToggleBox.MouseButton1Click:Connect(function()
+            Config.ESP.Box = not Config.ESP.Box
+            ToggleBox.Text = "🟣 BOX " .. (Config.ESP.Box and "ON" or "OFF")
+            ToggleBox.BackgroundColor3 = Config.ESP.Box and Color3.fromRGB(255, 0, 255) or Color3.fromRGB(100, 0, 100)
+            Config.ESP.BoxColor = Config.ESP.Box and Color3.fromRGB(200, 0, 255) or Color3.fromRGB(200, 200, 200)
+        end)
+
+        local ToggleNames = Instance.new("TextButton")
+        ToggleNames.Size = UDim2.new(0, 200, 0, 32)
+        ToggleNames.Position = UDim2.new(0, 20, 0, 170)
+        ToggleNames.Text = "🅱️ NAMES ON"
+        ToggleNames.BackgroundColor3 = Color3.fromRGB(120, 60, 0)
+        ToggleNames.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleNames.Font = Enum.Font.Gotham
+        ToggleNames.TextSize = 14
+        ToggleNames.Parent = MainFrame
+
+        ToggleNames.MouseButton1Click:Connect(function()
+            Config.ESP.Names = not Config.ESP.Names
+            ToggleNames.Text = "🅱️ NAMES " .. (Config.ESP.Names and "ON" or "OFF")
+            ToggleNames.BackgroundColor3 = Config.ESP.Names and Color3.fromRGB(0, 80, 120) or Color3.fromRGB(120, 60, 0)
+        end)
+
+        -- =====================
+        --  AIMBOT SECTION
+        -- =====================
+        local AimbotLabel = Instance.new("TextLabel")
+        AimbotLabel.Size = UDim2.new(1, 0, 0, 24)
+        AimbotLabel.Position = UDim2.new(0, 0, 0, 225)
+        AimbotLabel.Text = "🎯 AIMBOT CONTROL 🎯"
+        AimbotLabel.BackgroundTransparency = 1
+        AimbotLabel.TextColor3 = Color3.fromRGB(255, 150, 0)
+        AimbotLabel.Font = Enum.Font.GothamBold
+        AimbotLabel.TextSize = 14
+        AimbotLabel.Parent = MainFrame
+
+        local ToggleAimbot = Instance.new("TextButton")
+        ToggleAimbot.Size = UDim2.new(0, 200, 0, 32)
+        ToggleAimbot.Position = UDim2.new(0, 20, 0, 255)
+        ToggleAimbot.Text = "⚡ AIMBOT OFF"
+        ToggleAimbot.BackgroundColor3 = Color3.fromRGB(100, 30, 0)
+        ToggleAimbot.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleAimbot.Font = Enum.Font.GothamBold
+        ToggleAimbot.TextSize = 14
+        ToggleAimbot.Parent = MainFrame
+
+        ToggleAimbot.MouseButton1Click:Connect(function()
+            Config.Aimbot.Enabled = not Config.Aimbot.Enabled
+            ToggleAimbot.Text = "⚡ AIMBOT " .. (Config.Aimbot.Enabled and "ON" or "OFF")
+            ToggleAimbot.BackgroundColor3 = Config.Aimbot.Enabled and Color3.fromRGB(100, 0, 0) or Color3.fromRGB(100, 30, 0)
+        end)
+
+        -- =====================
+        --  BIND SELECTOR
+        -- =====================
+        local BindLabel = Instance.new("TextLabel")
+        BindLabel.Size = UDim2.new(1, 0, 0, 20)
+        BindLabel.Position = UDim2.new(0, 0, 0, 300)
+        BindLabel.Text = "🔗 BIND: " .. PossibleBinds[CurrentBindIndex].Name
+        BindLabel.BackgroundTransparency = 1
+        BindLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
+        BindLabel.Font = Enum.Font.Gotham
+        BindLabel.TextSize = 12
+        BindLabel.Parent = MainFrame
+
+        local ChangeBindButton = Instance.new("TextButton")
+        ChangeBindButton.Size = UDim2.new(0, 200, 0, 26)
+        ChangeBindButton.Position = UDim2.new(0, 20, 0, 325)
+        ChangeBindButton.Text = "🔄 MUDAR BIND"
+        ChangeBindButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        ChangeBindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ChangeBindButton.Font = Enum.Font.Gotham
+        ChangeBindButton.TextSize = 12
+        ChangeBindButton.Parent = MainFrame
+
+        ChangeBindButton.MouseButton1Click:Connect(function()
+            CurrentBindIndex = CurrentBindIndex % #PossibleBinds + 1
+            Config.Aimbot.Keybind = PossibleBinds[CurrentBindIndex].Key
+            BindLabel.Text = "🔗 BIND: " .. PossibleBinds[CurrentBindIndex].Name
+        end)
+
+        -- =====================
+        --  FOV SLIDER
+        -- =====================
+        local FOVLabel = Instance.new("TextLabel")
+        FOVLabel.Size = UDim2.new(0, 100, 0, 20)
+        FOVLabel.Position = UDim2.new(0, 20, 0, 360)
+        FOVLabel.Text = "🔘 FOV: " .. Config.Aimbot.FOV
+        FOVLabel.TextColor3 = Color3.new(1, 1, 1)
+        FOVLabel.BackgroundTransparency = 1
+        FOVLabel.Font = Enum.Font.Gotham
+        FOVLabel.TextSize = 12
+        FOVLabel.Parent = MainFrame
+
+        local FOVSliderBG = Instance.new("TextButton")
+        FOVSliderBG.Size = UDim2.new(0, 200, 0, 8)
+        FOVSliderBG.Position = UDim2.new(0, 20, 0, 385)
+        FOVSliderBG.Text = ""
+        FOVSliderBG.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        FOVSliderBG.Parent = MainFrame
+
+        FOVSliderBG.MouseButton1Down:Connect(function()
+            local conn
+            conn = FOVSliderBG.MouseButton1Up:Connect(function() conn:Disconnect() end)
+            while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                local x = UserInputService:GetMouseLocation().X
+                local ratio = math.clamp((x - FOVSliderBG.AbsolutePosition.X) / FOVSliderBG.AbsoluteSize.X, 0, 1)
+                Config.Aimbot.FOV = math.floor(ratio * 180 + 10)
+                FOVLabel.Text = "🔘 FOV: " .. Config.Aimbot.FOV
+                task.wait()
+            end
+        end)
+
+        -- ========================
+        --  FEEDBACK
+        -- ========================
+        local Footer = Instance.new("TextLabel")
+        Footer.Size = UDim2.new(1, 0, 0, 16)
+        Footer.Position = UDim2.new(0, 0, 0, 405)
+        Footer.Text = "⚠️ Use por sua conta e risco. Não me responsabilizo."
+        Footer.TextColor3 = Color3.fromRGB(255, 100, 100)
+        Footer.BackgroundTransparency = 1
+        Footer.Font = Enum.Font.Gotham
+        Footer.TextSize = 11
+        Footer.Parent = MainFrame
+    else
+        -- Fechar painel
+        local gui = LocalPlayer.PlayerGui:FindFirstChild("UniversalCheatGUI")
+        if gui then gui:Destroy() end
+    end
+
+    IsGUIOpen = not IsGUIOpen
+end
+
+-- ========================
+--  HOTKEY INSERT PARA TOGGLE DO PAINEL
+-- ========================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    if input.KeyCode == Enum.KeyCode.Insert then
+        CreateGUI()
+    elseif input.UserInputType == Config.Aimbot.Keybind then
+        Config.Aimbot.Enabled = not Config.Aimbot.Enabled
+        if Config.Aimbot.Enabled then
+            RunService:BindToRenderStep("AimbotUpdate", Enum.RenderPriority.Camera.Value + 1, AimbotUpdate)
+        else
+            RunService:UnbindFromRenderStep("AimbotUpdate")
+        end
+    end
+end)
+
+-- ========================
+--  INICIALIZAÇÃO
+-- ========================
+CreateGUI()
+RunService:BindToRenderStep("AimbotUpdate", Enum.RenderPriority.Camera.Value + 1, AimbotUpdate)
+
+print("UniversalCheat.lua (v3.0) carregado em " .. os.date("%H:%M:%S"))
+print("➡️ Pressione INSERT para abrir/fechar o painel.")
